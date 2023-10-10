@@ -1,12 +1,5 @@
-enum PostState {
-    Draft,
-    PendingReview,
-    Published,
-}
-
 pub struct Post {
     state: Option<Box<dyn State>>,
-    post_state: PostState,
     content: String,
 }
 impl Post {
@@ -15,22 +8,21 @@ impl Post {
         Post {
             state: Some(Box::new(Draft {})),
             content: String::new(),
-            post_state: PostState::Draft,
         }
     }
 
     pub fn add_text(&mut self, text: &str){
-        self.content.push_str(text);
+        if let Some(s) = self.state.take() {
+            if s.can_add_text() {
+                self.content.push_str(text);
+            } 
+            self.state = Some(s);
+        }
     }
 
     // different fn depending on state
     pub fn content(&self) -> &str {
-        match self.post_state{
-            PostState::Draft => "",
-            PostState::PendingReview => "",
-            PostState::Published => &self.content,
-        }
-        // self.state.as_ref().unwrap().content(self)
+        self.state.as_ref().unwrap().content(self)
     }
 
     pub fn request_review(&mut self) {
@@ -44,6 +36,12 @@ impl Post {
             self.state = Some(s.approve())
         }
     }
+
+    pub fn reject(&mut self) {
+        if let Some(s) = self.state.take() {
+            self.state = Some(s.reject())
+        }
+    }
 }
 
 trait State {
@@ -52,6 +50,8 @@ trait State {
     fn content<'a>(&self, _post: &'a Post) -> &'a str {
         ""
     }
+    fn reject(self: Box<Self>) -> Box<dyn State>;
+    fn can_add_text(&self) -> bool;
 }
 
 struct Draft {}
@@ -65,6 +65,12 @@ impl State for Draft {
     fn approve(self: Box<Self>) -> Box<dyn State> {
         self
     }
+    fn reject(self: Box<Self>) -> Box<dyn State> {
+        self
+    }
+    fn can_add_text(&self) -> bool {
+        true
+    }
 }
 
 impl State for PendingReview {
@@ -73,6 +79,13 @@ impl State for PendingReview {
     }
     fn approve(self: Box<Self>) -> Box<dyn State> {
         Box::new(Published {})
+    }
+    fn reject(self: Box<Self>) -> Box<dyn State> {
+        Box::new(Draft {})
+    }
+
+    fn can_add_text(&self) -> bool {
+        false
     }
 }
 
@@ -87,5 +100,11 @@ impl State for Published {
 
     fn content<'a>(&self, post: &'a Post) -> &'a str {
         &post.content
+    }
+    fn reject(self: Box<Self>) -> Box<dyn State> {
+        self
+    }
+    fn can_add_text(&self) -> bool {
+        false
     }
 }
